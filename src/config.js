@@ -27,5 +27,13 @@ export const config = {
   statusRefreshMs: optionalNumber("STATUS_REFRESH_MS", 60_000),
   checkIntervalMs: optionalNumber("CHECK_INTERVAL_MS", 30_000),
   kultumBeforeMaghribMinutes: optionalNumber("KULTUM_BEFORE_MAGHRIB_MINUTES", 20),
-  kultumMaxChars: optionalNumber("KULTUM_MAX_CHARS", 500)
+  kultumMaxChars: optionalNumber("KULTUM_MAX_CHARS", 500),
+  aiApiKey: process.env.AI_API_KEY || process.env.DEEPSEEK_API_KEY || "",
+  aiBaseUrl: process.env.AI_BASE_URL || "https://ai.sumopod.com",
+  aiModel: process.env.AI_MODEL || "deepseek-v3-2-free",
+  aiMaxTokens: optionalNumber("AI_MAX_TOKENS", 700),
+  aiTemperature: optionalNumber("AI_TEMPERATURE", 0.7),
+  aiTimeoutMs: optionalNumber("AI_TIMEOUT_MS", 45_000),
+  aiCooldownMs: optionalNumber("AI_COOLDOWN_MS", 12_000),
+  aiMaxPromptChars: optionalNumber("AI_MAX_PROMPT_CHARS", 700)
 };

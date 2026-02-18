@@ -3,10 +3,16 @@ import {
   Client,
   EmbedBuilder,
   Events,
-  GatewayIntentBits
+  GatewayIntentBits,
+  MessageFlags
 } from "discord.js";
 import { config } from "./config.js";
-import { getDailyShalat, getRandomTafsirSnippet } from "./equran.js";
+import { askRamadanAssistantWithContext } from "./ai.js";
+import {
+  getDailyShalat,
+  getRandomAyat,
+  getRandomTafsirSnippet
+} from "./equran.js";
 import {
   addDaysToDateKey,
   dateFromDateKey,
@@ -19,6 +25,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const sentReminderSet = new Set();
 const sentKultumSet = new Set();
+const aiCooldownMap = new Map();
 const presenceState = {
   lastText: "",
   lastType: null,
@@ -41,21 +48,21 @@ function roleMention() {
 function buildDailyEmbed(schedule, title) {
   return new EmbedBuilder()
     .setColor(0x2d8f58)
-    .setTitle(title)
+    .setTitle(`🕌 ${title}`)
     .setDescription(
-      `${schedule.kabkota}, ${schedule.provinsi}\nTanggal: ${schedule.dateKey}${
+      `${schedule.kabkota}, ${schedule.provinsi}\n📅 ${schedule.dateKey}${
         schedule.dayName ? ` (${schedule.dayName})` : ""
-      }`
+      }\nSemoga ibadah hari ini lancar 🤍`
     )
     .addFields(
-      { name: "Imsak", value: schedule.imsak, inline: true },
-      { name: "Subuh", value: schedule.subuh, inline: true },
-      { name: "Terbit", value: schedule.terbit, inline: true },
-      { name: "Dhuha", value: schedule.dhuha, inline: true },
-      { name: "Dzuhur", value: schedule.dzuhur, inline: true },
-      { name: "Ashar", value: schedule.ashar, inline: true },
-      { name: "Maghrib", value: schedule.maghrib, inline: true },
-      { name: "Isya", value: schedule.isya, inline: true }
+      { name: "⏱️ Imsak", value: schedule.imsak, inline: true },
+      { name: "🌅 Subuh", value: schedule.subuh, inline: true },
+      { name: "🌄 Terbit", value: schedule.terbit, inline: true },
+      { name: "🌤️ Dhuha", value: schedule.dhuha, inline: true },
+      { name: "☀️ Dzuhur", value: schedule.dzuhur, inline: true },
+      { name: "🌥️ Ashar", value: schedule.ashar, inline: true },
+      { name: "🌇 Maghrib", value: schedule.maghrib, inline: true },
+      { name: "🌙 Isya", value: schedule.isya, inline: true }
     )
     .setTimestamp(new Date());
 }
@@ -67,13 +74,15 @@ function buildCountdownEmbed({ label, schedule, eventTime, dateKey, now }) {
 
   return new EmbedBuilder()
     .setColor(label === "maghrib" ? 0xf59e0b : 0x38bdf8)
-    .setTitle(label === "maghrib" ? "Countdown Buka" : "Countdown Imsak")
+    .setTitle(label === "maghrib" ? "🍽️ Countdown Buka" : "⏱️ Countdown Imsak")
     .setDescription(
       `${schedule.kabkota}, ${schedule.provinsi}\n` +
-        `${label === "maghrib" ? "Maghrib" : "Imsak"}: ${target} (${dateKey})\n` +
+        `${label === "maghrib" ? "🌇 Maghrib" : "🔔 Imsak"}: ${target} (${dateKey})\n` +
         (isFuture
-          ? `Sisa waktu: **${formatCountdown(diff)}**`
-          : "Waktu sudah lewat.")
+          ? `⏳ Sisa waktu: **${formatCountdown(diff)}**`
+          : label === "maghrib"
+            ? "🎉 Waktunya berbuka. Bismillah!"
+            : "✅ Waktu imsak sudah lewat.")
     )
     .setTimestamp(new Date());
 }
@@ -104,6 +113,50 @@ function buildKultumEmbed({ snippet, schedule, dateKey, minutesLeft }) {
       }
     )
     .setFooter({ text: `${schedule.kabkota}, ${schedule.provinsi}` })
+    .setTimestamp(new Date());
+}
+
+function clampText(text, maxLength) {
+  const normalized = String(text || "").trim();
+  if (!normalized) return "-";
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function buildCommandErrorMessage(commandName, error) {
+  if (commandName === "ai") {
+    const status = Number(error?.status || 0);
+    const errorText = String(error?.message || "").toLowerCase();
+    const isRateLimit =
+      status === 429 ||
+      errorText.includes("rate") ||
+      errorText.includes("tpm") ||
+      errorText.includes("throttling");
+
+    if (isRateLimit) {
+      return "⚠️ AI lagi kena limit request/token. Coba lagi sebentar (sekitar 30-60 detik).";
+    }
+    return "⚠️ AI sedang bermasalah sementara. Coba lagi sebentar.";
+  }
+
+  return "Terjadi error saat memproses command. Coba lagi sebentar.";
+}
+
+function buildAyatEmbed(ayat) {
+  const surahLabel = `${ayat.surahName} (${ayat.surahNumber}:${ayat.ayah})`;
+  const arab = clampText(ayat.arab, 4096);
+  const latin = clampText(ayat.latin, 1024);
+  const translation = clampText(ayat.translation, 1024);
+
+  return new EmbedBuilder()
+    .setColor(0x16a34a)
+    .setTitle("Ayat Harian")
+    .setDescription(arab)
+    .addFields(
+      { name: "Surah", value: surahLabel, inline: false },
+      { name: "Latin", value: latin, inline: false },
+      { name: "Terjemahan", value: translation, inline: false }
+    )
     .setTimestamp(new Date());
 }
 
@@ -150,6 +203,22 @@ async function getNextEvent(eventName, now) {
     schedule: tomorrowSchedule,
     eventTime: tomorrowTime
   };
+}
+
+async function buildAiScheduleContext(now) {
+  const todayKey = getDateKeyInTimeZone(now, config.timezone);
+  const tomorrowKey = addDaysToDateKey(todayKey, 1);
+  const [today, tomorrow] = await Promise.all([
+    getScheduleByDateKey(todayKey),
+    getScheduleByDateKey(tomorrowKey)
+  ]);
+
+  return [
+    `timezone: ${config.timezone}`,
+    `lokasi: ${today.kabkota}, ${today.provinsi}`,
+    `hari-ini (${todayKey}): imsak ${today.imsak}, subuh ${today.subuh}, maghrib ${today.maghrib}, isya ${today.isya}`,
+    `besok (${tomorrowKey}): imsak ${tomorrow.imsak}, subuh ${tomorrow.subuh}, maghrib ${tomorrow.maghrib}, isya ${tomorrow.isya}`
+  ].join(" | ");
 }
 
 async function updateDynamicPresence() {
@@ -246,7 +315,10 @@ async function sendAutoReminders() {
       continue;
     }
 
-    const content = `${roleMention()} ${target.label} untuk ${schedule.kabkota} sudah masuk (${target.time}).`;
+    const content =
+      target.key === "maghrib"
+        ? `${roleMention()} 🌇 Pengingat maghrib ${schedule.kabkota}: ${target.time}. Saatnya berbuka, semoga berkah.`
+        : `${roleMention()} 🔔 Pengingat imsak ${schedule.kabkota}: ${target.time}. Yuk disiapkan, semoga puasanya lancar.`;
     await channel.send({
       content,
       allowedMentions: config.roleId ? { roles: [config.roleId] } : { parse: [] }
@@ -322,14 +394,55 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (dateInput && !parsed) {
         await interaction.reply({
           content: "Format tanggal tidak valid. Gunakan YYYY-MM-DD.",
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+    }
+
+    if (interaction.commandName === "ai") {
+      const prompt = interaction.options.getString("pesan") || "";
+      if (!config.aiApiKey) {
+        await interaction.reply({
+          content: "AI belum aktif. Isi AI_API_KEY atau DEEPSEEK_API_KEY dulu di .env.",
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
 
+      if (prompt.length > config.aiMaxPromptChars) {
+        await interaction.reply({
+          content: `Pesan terlalu panjang. Maksimal ${config.aiMaxPromptChars} karakter.`,
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+
+      const nowMs = Date.now();
+      const cooldownUntil = aiCooldownMap.get(interaction.user.id) || 0;
+      if (cooldownUntil > nowMs) {
+        const waitSeconds = Math.ceil((cooldownUntil - nowMs) / 1000);
+        await interaction.reply({
+          content: `Tunggu ${waitSeconds} detik sebelum pakai /ai lagi ya.`,
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+
+      aiCooldownMap.set(interaction.user.id, nowMs + config.aiCooldownMs);
+      if (aiCooldownMap.size > 500) {
+        aiCooldownMap.clear();
+      }
+    }
+
+    await interaction.deferReply();
+
+    if (interaction.commandName === "jadwal-sholat") {
+      const dateInput = interaction.options.getString("tanggal");
+      const parsed = parseDateOption(dateInput);
       const dateKey = parsed || getDateKeyInTimeZone(new Date(), config.timezone);
       const schedule = await getScheduleByDateKey(dateKey);
-      await interaction.reply({
+      await interaction.editReply({
         embeds: [buildDailyEmbed(schedule, "Jadwal Sholat")]
       });
       return;
@@ -339,7 +452,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const eventName = interaction.commandName === "buka" ? "maghrib" : "imsak";
       const nextEvent = await getNextEvent(eventName, new Date());
 
-      await interaction.reply({
+      await interaction.editReply({
         embeds: [
           buildCountdownEmbed({
             label: eventName,
@@ -359,7 +472,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const schedule = await getScheduleByDateKey(dateKey);
       const snippet = await getRandomTafsirSnippet({ maxLength: config.kultumMaxChars });
 
-      await interaction.reply({
+      await interaction.editReply({
         embeds: [
           buildKultumEmbed({
             snippet,
@@ -371,13 +484,39 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
       return;
     }
+
+    if (interaction.commandName === "ayat") {
+      const ayat = await getRandomAyat();
+      await interaction.editReply({ embeds: [buildAyatEmbed(ayat)] });
+      return;
+    }
+
+    if (interaction.commandName === "ai") {
+      const prompt = interaction.options.getString("pesan") || "";
+      const now = new Date();
+      let scheduleContext = "";
+      try {
+        scheduleContext = await buildAiScheduleContext(now);
+      } catch (error) {
+        console.error("Gagal siapkan konteks jadwal untuk AI:", error);
+      }
+
+      const answer = await askRamadanAssistantWithContext(prompt, scheduleContext);
+      await interaction.editReply({
+        content: `**AI Ramadan**\n${clampText(answer, 1900)}`,
+        allowedMentions: { parse: [] }
+      });
+      return;
+    }
+
+    await interaction.editReply({ content: "Command belum didukung." });
   } catch (error) {
     console.error("Command error:", error);
-    const message = "Terjadi error saat mengambil jadwal. Coba lagi sebentar.";
+    const message = buildCommandErrorMessage(interaction.commandName, error);
     if (interaction.deferred || interaction.replied) {
-      await interaction.followUp({ content: message, ephemeral: true });
+      await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
-      await interaction.reply({ content: message, ephemeral: true });
+      await interaction.reply({ content: message, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
 });
