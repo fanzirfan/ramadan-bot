@@ -18,6 +18,8 @@ import {
   dateFromDateKey,
   formatCountdown,
   getDateKeyInTimeZone,
+  getRamadanDayFromDateKey,
+  getRamadanDayInTimeZone,
   toDateTimeInTimeZone
 } from "./time.js";
 
@@ -46,13 +48,20 @@ function roleMention() {
 }
 
 function buildDailyEmbed(schedule, title) {
+  const ramadanDayLabel = getRamadanDayFromDateKey(
+    schedule.dateKey,
+    config.ramadanStartDate,
+    config.ramadanTotalDays
+  );
+  const ramadanText = ramadanDayLabel ? `\nPuasa hari ke-${ramadanDayLabel} Ramadan` : "";
+
   return new EmbedBuilder()
     .setColor(0x2d8f58)
     .setTitle(`🕌 ${title}`)
     .setDescription(
       `${schedule.kabkota}, ${schedule.provinsi}\n📅 ${schedule.dateKey}${
         schedule.dayName ? ` (${schedule.dayName})` : ""
-      }\nSemoga ibadah hari ini lancar 🤍`
+      }${ramadanText}\nSemoga ibadah hari ini lancar 🤍`
     )
     .addFields(
       { name: "⏱️ Imsak", value: schedule.imsak, inline: true },
@@ -71,13 +80,19 @@ function buildCountdownEmbed({ label, schedule, eventTime, dateKey, now }) {
   const diff = eventTime.getTime() - now.getTime();
   const target = label === "maghrib" ? schedule.maghrib : schedule.imsak;
   const isFuture = diff > 0;
+  const ramadanDay = getRamadanDayFromDateKey(
+    dateKey,
+    config.ramadanStartDate,
+    config.ramadanTotalDays
+  );
+  const ramadanText = ramadanDay ? `\nPuasa hari ke-${ramadanDay} Ramadan` : "";
 
   return new EmbedBuilder()
     .setColor(label === "maghrib" ? 0xf59e0b : 0x38bdf8)
     .setTitle(label === "maghrib" ? "🍽️ Countdown Buka" : "⏱️ Countdown Imsak")
     .setDescription(
       `${schedule.kabkota}, ${schedule.provinsi}\n` +
-        `${label === "maghrib" ? "🌇 Maghrib" : "🔔 Imsak"}: ${target} (${dateKey})\n` +
+        `${label === "maghrib" ? "🌇 Maghrib" : "🔔 Imsak"}: ${target} (${dateKey})${ramadanText}\n` +
         (isFuture
           ? `⏳ Sisa waktu: **${formatCountdown(diff)}**`
           : label === "maghrib"
@@ -90,11 +105,17 @@ function buildCountdownEmbed({ label, schedule, eventTime, dateKey, now }) {
 function buildKultumEmbed({ snippet, schedule, dateKey, minutesLeft }) {
   const sisaWaktuText =
     minutesLeft > 0 ? `${minutesLeft} menit lagi` : "Siap dibaca kapan saja";
+  const ramadanDay = getRamadanDayFromDateKey(
+    dateKey,
+    config.ramadanStartDate,
+    config.ramadanTotalDays
+  );
+  const subtitle = ramadanDay ? `Puasa hari ke-${ramadanDay} Ramadan` : "Kultum singkat";
 
   return new EmbedBuilder()
     .setColor(0x7c3aed)
     .setTitle("Kultum Menjelang Berbuka")
-    .setDescription(snippet.text)
+    .setDescription(`${subtitle}\n\n${snippet.text}`)
     .addFields(
       {
         name: "Tafsir",
@@ -147,10 +168,17 @@ function buildAyatEmbed(ayat) {
   const arab = clampText(ayat.arab, 4096);
   const latin = clampText(ayat.latin, 1024);
   const translation = clampText(ayat.translation, 1024);
+  const ramadanDay = getRamadanDayInTimeZone(
+    new Date(),
+    config.timezone,
+    config.ramadanStartDate,
+    config.ramadanTotalDays
+  );
+  const titleSuffix = ramadanDay ? ` · Puasa hari ke-${ramadanDay}` : "";
 
   return new EmbedBuilder()
     .setColor(0x16a34a)
-    .setTitle("Ayat Harian")
+    .setTitle(`Ayat Harian${titleSuffix}`)
     .setDescription(arab)
     .addFields(
       { name: "Surah", value: surahLabel, inline: false },
@@ -208,6 +236,11 @@ async function getNextEvent(eventName, now) {
 async function buildAiScheduleContext(now) {
   const todayKey = getDateKeyInTimeZone(now, config.timezone);
   const tomorrowKey = addDaysToDateKey(todayKey, 1);
+  const ramadanDay = getRamadanDayFromDateKey(
+    todayKey,
+    config.ramadanStartDate,
+    config.ramadanTotalDays
+  );
   const [today, tomorrow] = await Promise.all([
     getScheduleByDateKey(todayKey),
     getScheduleByDateKey(tomorrowKey)
@@ -216,9 +249,12 @@ async function buildAiScheduleContext(now) {
   return [
     `timezone: ${config.timezone}`,
     `lokasi: ${today.kabkota}, ${today.provinsi}`,
+    ramadanDay ? `ramadan-hari-ke: ${ramadanDay}` : "",
     `hari-ini (${todayKey}): imsak ${today.imsak}, subuh ${today.subuh}, maghrib ${today.maghrib}, isya ${today.isya}`,
     `besok (${tomorrowKey}): imsak ${tomorrow.imsak}, subuh ${tomorrow.subuh}, maghrib ${tomorrow.maghrib}, isya ${tomorrow.isya}`
-  ].join(" | ");
+  ]
+    .filter(Boolean)
+    .join(" | ");
 }
 
 async function updateDynamicPresence() {
@@ -291,6 +327,11 @@ async function updateDynamicPresence() {
 async function sendAutoReminders() {
   const now = new Date();
   const dateKey = getDateKeyInTimeZone(now, config.timezone);
+  const ramadanDay = getRamadanDayFromDateKey(
+    dateKey,
+    config.ramadanStartDate,
+    config.ramadanTotalDays
+  );
   const schedule = await getScheduleByDateKey(dateKey);
 
   const channel = await client.channels.fetch(config.channelId);
@@ -317,8 +358,12 @@ async function sendAutoReminders() {
 
     const content =
       target.key === "maghrib"
-        ? `${roleMention()} 🌇 Pengingat maghrib ${schedule.kabkota}: ${target.time}. Saatnya berbuka, semoga berkah.`
-        : `${roleMention()} 🔔 Pengingat imsak ${schedule.kabkota}: ${target.time}. Yuk disiapkan, semoga puasanya lancar.`;
+        ? `${roleMention()} 🌇 Pengingat maghrib ${schedule.kabkota}: ${target.time}.${
+            ramadanDay ? ` Puasa hari ke-${ramadanDay} Ramadan.` : ""
+          } Saatnya berbuka, semoga berkah.`
+        : `${roleMention()} 🔔 Pengingat imsak ${schedule.kabkota}: ${target.time}.${
+            ramadanDay ? ` Puasa hari ke-${ramadanDay} Ramadan.` : ""
+          } Yuk disiapkan, semoga puasanya lancar.`;
     await channel.send({
       content,
       allowedMentions: config.roleId ? { roles: [config.roleId] } : { parse: [] }
@@ -494,6 +539,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.commandName === "ai") {
       const prompt = interaction.options.getString("pesan") || "";
       const now = new Date();
+      const ramadanDay = getRamadanDayInTimeZone(
+        now,
+        config.timezone,
+        config.ramadanStartDate,
+        config.ramadanTotalDays
+      );
       let scheduleContext = "";
       try {
         scheduleContext = await buildAiScheduleContext(now);
@@ -503,7 +554,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const answer = await askRamadanAssistantWithContext(prompt, scheduleContext);
       await interaction.editReply({
-        content: `**AI Ramadan**\n${clampText(answer, 1900)}`,
+        content: `${ramadanDay ? `**AI Ramadan • Puasa hari ke-${ramadanDay}**\n` : "**AI Ramadan**\n"}${clampText(answer, 1900)}`,
         allowedMentions: { parse: [] }
       });
       return;

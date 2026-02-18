@@ -96,3 +96,32 @@ export function formatCountdown(ms) {
   if (minutes > 0) return `${minutes} menit ${seconds} detik`;
   return `${seconds} detik`;
 }
+
+function diffDaysBetweenDateKeys(startDateKey, currentDateKey) {
+  const start = parseDateKey(startDateKey);
+  const current = parseDateKey(currentDateKey);
+  if (!start || !current) return null;
+
+  const startUtc = Date.UTC(start.year, start.month - 1, start.day);
+  const currentUtc = Date.UTC(current.year, current.month - 1, current.day);
+  return Math.floor((currentUtc - startUtc) / 86_400_000);
+}
+
+export function getRamadanDayInTimeZone(date, timeZone, ramadanStartDateKey, ramadanTotalDays = 30) {
+  const currentDateKey = getDateKeyInTimeZone(date, timeZone);
+  const diff = diffDaysBetweenDateKeys(ramadanStartDateKey, currentDateKey);
+  if (diff === null) return null;
+
+  const day = diff + 1;
+  if (day < 1 || day > ramadanTotalDays) return null;
+  return day;
+}
+
+export function getRamadanDayFromDateKey(dateKey, ramadanStartDateKey, ramadanTotalDays = 30) {
+  const diff = diffDaysBetweenDateKeys(ramadanStartDateKey, dateKey);
+  if (diff === null) return null;
+
+  const day = diff + 1;
+  if (day < 1 || day > ramadanTotalDays) return null;
+  return day;
+}

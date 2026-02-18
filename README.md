@@ -61,6 +61,8 @@ npm run start
 - Gunakan `DISCORD_GUILD_ID` saat development supaya update command cepat.
 - Jika `DISCORD_GUILD_ID` kosong, command di-deploy global (propagasi bisa lebih lama).
 - `RAMADAN_PROVINSI` dan `RAMADAN_KABKOTA` harus sesuai data EQuran.
+- `RAMADAN_START_DATE` dipakai sebagai patokan "Puasa hari ke-X" (format `YYYY-MM-DD`).
+- `RAMADAN_TOTAL_DAYS` default `30` untuk membatasi label hari puasa.
 - `KULTUM_BEFORE_MAGHRIB_MINUTES` untuk atur berapa menit sebelum maghrib kultum dikirim.
 - `KULTUM_MAX_CHARS` untuk membatasi panjang teks tafsir di embed.
 - Isi `AI_API_KEY` (atau `DEEPSEEK_API_KEY`) untuk mengaktifkan command `/ai`.

@@ -35,5 +35,7 @@ export const config = {
   aiTemperature: optionalNumber("AI_TEMPERATURE", 0.7),
   aiTimeoutMs: optionalNumber("AI_TIMEOUT_MS", 45_000),
   aiCooldownMs: optionalNumber("AI_COOLDOWN_MS", 12_000),
-  aiMaxPromptChars: optionalNumber("AI_MAX_PROMPT_CHARS", 700)
+  aiMaxPromptChars: optionalNumber("AI_MAX_PROMPT_CHARS", 700),
+  ramadanStartDate: process.env.RAMADAN_START_DATE || "2026-02-19",
+  ramadanTotalDays: optionalNumber("RAMADAN_TOTAL_DAYS", 30)
 };

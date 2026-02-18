@@ -6,6 +6,7 @@ const RAMADAN_SYSTEM_PROMPT = [
   "Kamu adalah asisten Discord khusus Ramadan berbahasa Indonesia.",
   "Fokus utama: puasa Ramadan, jadwal ibadah, niat, adab, motivasi, dan amalan harian.",
   "Jawaban ringkas, jelas, sopan, dan praktis.",
+  "Format jawaban rapi: gunakan paragraf pendek dan bullet jika ada beberapa poin; jangan satu baris panjang.",
   "Jika pertanyaan di luar Ramadan atau ibadah, arahkan kembali secara halus ke konteks Ramadan.",
   "Jika menyebut dalil, hindari mengarang; jika tidak yakin, katakan tidak yakin.",
   "Jangan memberi fatwa pasti; sarankan cek ustaz/ulama setempat untuk keputusan fikih detail."
@@ -97,14 +98,24 @@ async function postChatCompletion({ messages }) {
   throw lastError || new Error("Semua endpoint AI gagal diakses.");
 }
 
-function sanitizePrompt(prompt) {
+function sanitizeInlineText(prompt) {
   return String(prompt || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+function normalizeAssistantText(text) {
+  return String(text || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export async function askRamadanAssistant(rawPrompt) {
-  const prompt = sanitizePrompt(rawPrompt);
+  const prompt = sanitizeInlineText(rawPrompt);
   if (!prompt) {
     throw new Error("Prompt kosong.");
   }
@@ -117,7 +128,7 @@ export async function askRamadanAssistant(rawPrompt) {
   });
 
   const content = json?.choices?.[0]?.message?.content;
-  const answer = sanitizePrompt(content);
+  const answer = normalizeAssistantText(content);
   if (!answer) {
     throw new Error("AI tidak mengembalikan jawaban.");
   }
@@ -126,8 +137,8 @@ export async function askRamadanAssistant(rawPrompt) {
 }
 
 export async function askRamadanAssistantWithContext(rawPrompt, rawContext) {
-  const prompt = sanitizePrompt(rawPrompt);
-  const context = sanitizePrompt(rawContext);
+  const prompt = sanitizeInlineText(rawPrompt);
+  const context = sanitizeInlineText(rawContext);
   if (!prompt) {
     throw new Error("Prompt kosong.");
   }
@@ -148,7 +159,7 @@ export async function askRamadanAssistantWithContext(rawPrompt, rawContext) {
   });
 
   const content = json?.choices?.[0]?.message?.content;
-  const answer = sanitizePrompt(content);
+  const answer = normalizeAssistantText(content);
   if (!answer) {
     throw new Error("AI tidak mengembalikan jawaban.");
   }
