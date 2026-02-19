@@ -23,7 +23,13 @@ import {
   toDateTimeInTimeZone
 } from "./time.js";
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
+});
 
 const sentReminderSet = new Set();
 const sentKultumSet = new Set();
@@ -165,6 +171,16 @@ function buildCommandErrorMessage(commandName, error) {
 
 function isUnknownInteractionError(error) {
   return Number(error?.code || 0) === 10062;
+}
+
+function buildAiHeader(now) {
+  const ramadanDay = getRamadanDayInTimeZone(
+    now,
+    config.timezone,
+    config.ramadanStartDate,
+    config.ramadanTotalDays
+  );
+  return ramadanDay ? `**AI Ramadan • Puasa hari ke-${ramadanDay}**\n` : "**AI Ramadan**\n";
 }
 
 function buildAyatEmbed(ayat) {
@@ -554,12 +570,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.commandName === "ai") {
       const prompt = interaction.options.getString("pesan") || "";
       const now = new Date();
-      const ramadanDay = getRamadanDayInTimeZone(
-        now,
-        config.timezone,
-        config.ramadanStartDate,
-        config.ramadanTotalDays
-      );
       let scheduleContext = "";
       try {
         scheduleContext = await buildAiScheduleContext(now);
@@ -569,7 +579,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const answer = await askRamadanAssistantWithContext(prompt, scheduleContext);
       await interaction.editReply({
-        content: `${ramadanDay ? `**AI Ramadan • Puasa hari ke-${ramadanDay}**\n` : "**AI Ramadan**\n"}${clampText(answer, 1900)}`,
+        content: `${buildAiHeader(now)}${clampText(answer, 1900)}`,
         allowedMentions: { parse: [] }
       });
       return;
@@ -587,6 +597,60 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } else {
       await interaction.reply({ content: message, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
+  }
+});
+
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot || message.author.id === client.user?.id) return;
+  if (!message.inGuild()) return;
+  if (message.channelId !== config.channelId) return;
+  if (!config.aiApiKey) return;
+
+  const prompt = String(message.content || "").trim();
+  if (!prompt || prompt.startsWith("/")) return;
+
+  if (prompt.length > config.aiMaxPromptChars) {
+    await message
+      .reply({
+        content: `Pesan terlalu panjang. Maksimal ${config.aiMaxPromptChars} karakter.`,
+        allowedMentions: { parse: [], repliedUser: false }
+      })
+      .catch(() => {});
+    return;
+  }
+
+  const nowMs = Date.now();
+  const cooldownUntil = aiCooldownMap.get(message.author.id) || 0;
+  if (cooldownUntil > nowMs) return;
+
+  aiCooldownMap.set(message.author.id, nowMs + config.aiCooldownMs);
+  if (aiCooldownMap.size > 500) {
+    aiCooldownMap.clear();
+  }
+
+  const now = new Date();
+  let scheduleContext = "";
+
+  try {
+    scheduleContext = await buildAiScheduleContext(now);
+  } catch (error) {
+    console.error("Gagal siapkan konteks jadwal untuk AI (message):", error);
+  }
+
+  try {
+    const answer = await askRamadanAssistantWithContext(prompt, scheduleContext);
+    await message.reply({
+      content: `${buildAiHeader(now)}${clampText(answer, 1900)}`,
+      allowedMentions: { parse: [], repliedUser: false }
+    });
+  } catch (error) {
+    console.error("Message AI error:", error);
+    await message
+      .reply({
+        content: buildCommandErrorMessage("ai", error),
+        allowedMentions: { parse: [], repliedUser: false }
+      })
+      .catch(() => {});
   }
 });
 
