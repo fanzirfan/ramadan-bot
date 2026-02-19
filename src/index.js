@@ -465,41 +465,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
 
-    if (interaction.commandName === "ai") {
-      const prompt = interaction.options.getString("pesan") || "";
-      if (!config.aiApiKey) {
-        await interaction.reply({
-          content: "AI belum aktif. Isi AI_API_KEY atau DEEPSEEK_API_KEY dulu di .env.",
-          flags: MessageFlags.Ephemeral
-        });
-        return;
-      }
-
-      if (prompt.length > config.aiMaxPromptChars) {
-        await interaction.reply({
-          content: `Pesan terlalu panjang. Maksimal ${config.aiMaxPromptChars} karakter.`,
-          flags: MessageFlags.Ephemeral
-        });
-        return;
-      }
-
-      const nowMs = Date.now();
-      const cooldownUntil = aiCooldownMap.get(interaction.user.id) || 0;
-      if (cooldownUntil > nowMs) {
-        const waitSeconds = Math.ceil((cooldownUntil - nowMs) / 1000);
-        await interaction.reply({
-          content: `Tunggu ${waitSeconds} detik sebelum pakai /ai lagi ya.`,
-          flags: MessageFlags.Ephemeral
-        });
-        return;
-      }
-
-      aiCooldownMap.set(interaction.user.id, nowMs + config.aiCooldownMs);
-      if (aiCooldownMap.size > 500) {
-        aiCooldownMap.clear();
-      }
-    }
-
     try {
       await interaction.deferReply();
     } catch (error) {
@@ -564,24 +529,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.commandName === "ayat") {
       const ayat = await getRandomAyat();
       await interaction.editReply({ embeds: [buildAyatEmbed(ayat)] });
-      return;
-    }
-
-    if (interaction.commandName === "ai") {
-      const prompt = interaction.options.getString("pesan") || "";
-      const now = new Date();
-      let scheduleContext = "";
-      try {
-        scheduleContext = await buildAiScheduleContext(now);
-      } catch (error) {
-        console.error("Gagal siapkan konteks jadwal untuk AI:", error);
-      }
-
-      const answer = await askRamadanAssistantWithContext(prompt, scheduleContext);
-      await interaction.editReply({
-        content: `${buildAiHeader(now)}${clampText(answer, 1900)}`,
-        allowedMentions: { parse: [] }
-      });
       return;
     }
 

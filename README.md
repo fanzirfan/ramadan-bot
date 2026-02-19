@@ -11,7 +11,7 @@ Bot Discord untuk Ramadan dengan fitur:
   - `/imsak`
   - `/kultum`
   - `/ayat`
-  - `/ai pesan:<teks>` (AI khusus Ramadan)
+- AI auto-reply di channel reminder (chat biasa tanpa slash command)
 - Status bot dinamis: `Watching Menuju Maghrib ...`.
 
 Data diambil dari EQuran API v2:
@@ -20,7 +20,7 @@ Data diambil dari EQuran API v2:
 - Tafsir surat: `https://equran.id/api/v2/tafsir/{nomor}`
 - Ayat surat: `https://equran.id/api/v2/surat/{nomor}`
 - AI chat (OpenAI-compatible): `https://ai.sumopod.com`
-- Command `/ai` membaca konteks jadwal imsak/subuh/maghrib/isya (hari ini + besok) dari data EQuran.
+- AI membaca konteks jadwal imsak/subuh/maghrib/isya (hari ini + besok) dari data EQuran.
 
 ## Setup
 
@@ -65,5 +65,5 @@ npm run start
 - `RAMADAN_TOTAL_DAYS` default `30` untuk membatasi label hari puasa.
 - `KULTUM_BEFORE_MAGHRIB_MINUTES` untuk atur berapa menit sebelum maghrib kultum dikirim.
 - `KULTUM_MAX_CHARS` untuk membatasi panjang teks tafsir di embed.
-- Isi `AI_API_KEY` (atau `DEEPSEEK_API_KEY`) untuk mengaktifkan command `/ai`.
+- Isi `AI_API_KEY` (atau `DEEPSEEK_API_KEY`) untuk mengaktifkan AI auto-reply di channel reminder.
 - Default model AI: `deepseek-v3-2-free` dengan cooldown user via `AI_COOLDOWN_MS`.

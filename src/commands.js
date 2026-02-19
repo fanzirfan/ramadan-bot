@@ -25,17 +25,7 @@ export const commandBuilders = [
 
   new SlashCommandBuilder()
     .setName("ayat")
-    .setDescription("Kirim ayat Al-Quran acak dari EQuran"),
-
-  new SlashCommandBuilder()
-    .setName("ai")
-    .setDescription("Ngobrol bareng AI khusus Ramadan")
-    .addStringOption((option) =>
-      option
-        .setName("pesan")
-        .setDescription("Pertanyaan atau curhat seputar Ramadan")
-        .setRequired(true)
-    )
+    .setDescription("Kirim ayat Al-Quran acak dari EQuran")
 ];
 
 export const commandJson = commandBuilders.map((builder) => builder.toJSON());
