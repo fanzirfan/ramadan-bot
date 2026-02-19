@@ -163,6 +163,10 @@ function buildCommandErrorMessage(commandName, error) {
   return "Terjadi error saat memproses command. Coba lagi sebentar.";
 }
 
+function isUnknownInteractionError(error) {
+  return Number(error?.code || 0) === 10062;
+}
+
 function buildAyatEmbed(ayat) {
   const surahLabel = `${ayat.surahName} (${ayat.surahNumber}:${ayat.ayah})`;
   const arab = clampText(ayat.arab, 4096);
@@ -480,7 +484,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
 
-    await interaction.deferReply();
+    try {
+      await interaction.deferReply();
+    } catch (error) {
+      if (isUnknownInteractionError(error)) {
+        const ageMs = Date.now() - interaction.createdTimestamp;
+        console.warn(
+          `Interaction expired before defer: /${interaction.commandName} (age=${ageMs}ms)`
+        );
+        return;
+      }
+      throw error;
+    }
 
     if (interaction.commandName === "jadwal-sholat") {
       const dateInput = interaction.options.getString("tanggal");
@@ -563,6 +578,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await interaction.editReply({ content: "Command belum didukung." });
   } catch (error) {
     console.error("Command error:", error);
+    if (isUnknownInteractionError(error)) {
+      return;
+    }
     const message = buildCommandErrorMessage(interaction.commandName, error);
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral }).catch(() => {});
